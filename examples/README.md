@@ -153,14 +153,14 @@ python examples/youtube_quota_usage.py \
   --quota-project YOUR_PROJECT_ID
 ```
 
-テーブル形式で出力されます:
+出力例:
 
 ```
-Youtube - Quota Usage (daily, last 24h)
+Youtube - Quota Usage
 
-Metric                                                  Usage      Limit     Rate
-----------------------------------------------------------------------------------
-default                                                   200     10000     2.0%
+  Queries per day: 200 / 10,000 (2.0%)
+  Queries per minute: 0 / 1,800,000 (0.0%)
+  Queries per minute per user: 0 / 180,000 (0.0%)
 ```
 
 `--json` オプションで JSON 出力も可能です:
@@ -172,10 +172,28 @@ python examples/youtube_quota_usage.py --json
 ```json
 [
   {
-    "metric": "youtube.googleapis.com/default",
+    "quota_id": "defaultPerDayPerProject",
+    "display_name": "Queries per day",
+    "refresh_interval": "day",
     "usage": 200,
     "limit": 10000,
     "usage_rate": 2.0
+  },
+  {
+    "quota_id": "defaultPerMinutePerProject",
+    "display_name": "Queries per minute",
+    "refresh_interval": "minute",
+    "usage": 0,
+    "limit": 1800000,
+    "usage_rate": 0.0
+  },
+  {
+    "quota_id": "defaultPerMinutePerUser",
+    "display_name": "Queries per minute per user",
+    "refresh_interval": "minute",
+    "usage": 0,
+    "limit": 180000,
+    "usage_rate": 0.0
   }
 ]
 ```
