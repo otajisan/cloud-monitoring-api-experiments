@@ -107,8 +107,8 @@ def build_report(quota_infos, allocation_usage, rate_usage):
 
     Maps usage to quotas by matching:
       - quota_metric label (e.g. youtube.googleapis.com/default) -> quotaInfo.metric
-      - allocation/usage  -> quotas with refreshInterval "day"
-      - rate/net_usage    -> quotas with refreshInterval "minute" (etc.)
+      - rate/net_usage    -> quotas with refreshInterval "day" (cumulative daily usage)
+      - allocation/usage  -> quotas with refreshInterval "minute" (instantaneous rate)
     """
     report = []
     for qi in quota_infos:
@@ -117,12 +117,13 @@ def build_report(quota_infos, allocation_usage, rate_usage):
         display_name = qi.get("metricDisplayName") or qi.get("quotaDisplayName") or quota_id
         refresh = qi.get("refreshInterval", "")
 
-        # Pick the right usage source based on refreshInterval
+        # rate/net_usage tracks cumulative daily usage,
+        # allocation/usage tracks instantaneous rate (per-minute)
         if refresh == "day":
-            usage = allocation_usage.get(metric, 0)
+            usage = rate_usage.get(metric, 0)
             interval_label = "per day"
         else:
-            usage = rate_usage.get(metric, 0)
+            usage = allocation_usage.get(metric, 0)
             interval_label = f"per {refresh}" if refresh else ""
 
         # Determine limit
