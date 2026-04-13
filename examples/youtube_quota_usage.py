@@ -28,21 +28,21 @@ MONITORING_BASE = "https://monitoring.googleapis.com/v3"
 QUOTAS_BASE = "https://cloudquotas.googleapis.com/v1"
 SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 
-# Metrics to query, grouped by quota type
+# Metrics to query, grouped by quota type.
+# Note: Monitoring API's quota/limit does not distinguish allocation vs rate,
+# so allocation limits come from Cloud Quotas API (which uses refreshInterval).
 QUOTA_TYPES = {
     "allocation": {
         "label": "Allocation (per day)",
         "usage": "serviceruntime.googleapis.com/quota/allocation/usage",
-        "limit_candidates": [
-            "serviceruntime.googleapis.com/quota/limit",
-            "serviceruntime.googleapis.com/quota/allocation/limit",
-        ],
+        "limit_candidates": [],
     },
     "rate": {
         "label": "Rate (per minute)",
         "usage": "serviceruntime.googleapis.com/quota/rate/net_usage",
         "limit_candidates": [
             "serviceruntime.googleapis.com/quota/rate/limit",
+            "serviceruntime.googleapis.com/quota/limit",
         ],
     },
 }
@@ -145,19 +145,32 @@ def fetch_usage_and_limit(session, project, service, interval_start, interval_en
     return usage_map, limit_map
 
 
-def build_quotas_limit_map(quotas_info):
-    """Build a metric -> limit map from Cloud Quotas API response."""
-    result = {}
+def build_quotas_limit_maps(quotas_info):
+    """Build per-type limit maps from Cloud Quotas API response.
+
+    Returns:
+        (allocation_limits, rate_limits) - each is {metric: limit_value}
+
+    Uses refreshInterval from Cloud Quotas API to distinguish:
+        "day" -> allocation (per day)
+        other -> rate (per minute etc.)
+    """
+    allocation = {}
+    rate = {}
     if not quotas_info:
-        return result
+        return allocation, rate
     for qi in quotas_info:
         metric = qi.get("metric", "")
+        interval = qi.get("refreshInterval", "")
         dims = qi.get("dimensionsInfos", [])
         if dims:
             val = dims[0].get("details", {}).get("value")
             if val is not None:
-                result[metric] = int(val)
-    return result
+                if interval == "day":
+                    allocation[metric] = int(val)
+                else:
+                    rate[metric] = int(val)
+    return allocation, rate
 
 
 def main():
@@ -204,9 +217,13 @@ def main():
     interval_end = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     interval_start = start.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Fallback limits from Cloud Quotas API
+    # Fallback limits from Cloud Quotas API (split by quota type)
     quotas_info = fetch_quota_limit(session, args.project_number, args.service)
-    quotas_limit_map = build_quotas_limit_map(quotas_info)
+    allocation_limits, rate_limits = build_quotas_limit_maps(quotas_info)
+    fallback_limits = {
+        "allocation": allocation_limits,
+        "rate": rate_limits,
+    }
 
     # Fetch metrics for each quota type
     all_sections = []
@@ -216,14 +233,16 @@ def main():
             interval_start, interval_end, config,
         )
 
-        all_metrics = sorted(set(list(usage_map.keys()) + list(limit_map.keys())))
+        quota_fallback = fallback_limits.get(qtype, {})
+        all_metrics = sorted(set(
+            list(usage_map.keys()) + list(limit_map.keys()) + list(quota_fallback.keys())
+        ))
         if not all_metrics:
             continue
-
         entries = []
         for metric in all_metrics:
             usage = usage_map.get(metric, 0)
-            limit = limit_map.get(metric) or quotas_limit_map.get(metric)
+            limit = limit_map.get(metric) or quota_fallback.get(metric)
             entries.append({
                 "metric": metric,
                 "usage": usage,
