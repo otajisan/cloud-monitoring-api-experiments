@@ -41,14 +41,29 @@ def get_authenticated_session(quota_project=None):
     return AuthorizedSession(credentials)
 
 
+def handle_api_error(resp):
+    """Print API error details and exit."""
+    print(f"Error: HTTP {resp.status_code}", file=sys.stderr)
+    body = resp.text
+    print(body, file=sys.stderr)
+
+    if resp.status_code == 403 and "quota project" in body.lower():
+        print(
+            "\nHint: --quota-project が指定されていません。"
+            "ADC のエンドユーザー認証ではクォータプロジェクトの指定が必要です。\n"
+            "  --quota-project YOUR_PROJECT_ID を追加してください。",
+            file=sys.stderr,
+        )
+
+    sys.exit(1)
+
+
 def get_quota_info(session, name):
     """GET a single QuotaInfo by full resource name."""
     url = f"{CLOUD_QUOTAS_BASE}/{name}"
     resp = session.get(url)
     if resp.status_code != 200:
-        print(f"Error: HTTP {resp.status_code}", file=sys.stderr)
-        print(resp.text, file=sys.stderr)
-        sys.exit(1)
+        handle_api_error(resp)
     return resp.json()
 
 
@@ -60,9 +75,7 @@ def list_quota_infos(session, project_number, service):
     url = f"{CLOUD_QUOTAS_BASE}/{parent}/quotaInfos"
     resp = session.get(url, params={"pageSize": 1})
     if resp.status_code != 200:
-        print(f"Error: HTTP {resp.status_code}", file=sys.stderr)
-        print(resp.text, file=sys.stderr)
-        sys.exit(1)
+        handle_api_error(resp)
     return resp.json()
 
 
