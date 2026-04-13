@@ -11,6 +11,7 @@ Supports two modes:
 
 import argparse
 import json
+import os
 import sys
 
 import google.auth
@@ -93,11 +94,16 @@ def main():
     )
     parser.add_argument(
         "--project-number",
-        help="Google Cloud project number (numeric, e.g. 123456789012). NOT project ID.",
+        default=os.environ.get("GCP_PROJECT_NUMBER"),
+        help=(
+            "Google Cloud project number (numeric, e.g. 123456789012). NOT project ID. "
+            "(env: GCP_PROJECT_NUMBER)"
+        ),
     )
     parser.add_argument(
         "--service",
-        help="Service name, e.g. youtube.googleapis.com",
+        default=os.environ.get("GCP_SERVICE"),
+        help="Service name, e.g. youtube.googleapis.com (env: GCP_SERVICE)",
     )
     parser.add_argument(
         "--discover",
@@ -106,10 +112,11 @@ def main():
     )
     parser.add_argument(
         "--quota-project",
+        default=os.environ.get("GCP_QUOTA_PROJECT"),
         help=(
             "Project ID to use as the quota project for API billing. "
             "Required when using ADC with end-user credentials. "
-            "Example: my-project-id"
+            "Example: my-project-id (env: GCP_QUOTA_PROJECT)"
         ),
     )
     args = parser.parse_args()

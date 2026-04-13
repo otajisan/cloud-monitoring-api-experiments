@@ -63,8 +63,12 @@ pip install google-auth requests
 | 変数名 | 用途 | 必須 |
 |---|---|---|
 | `YOUTUBE_API_KEY` | YouTube Data API の API キー | YouTube サンプルで必須 |
+| `GCP_PROJECT_NUMBER` | プロジェクト番号 (数字、例: `123456789012`) | Cloud Quotas サンプルで必須 (または `--project-number`) |
+| `GCP_QUOTA_PROJECT` | クォータプロジェクト ID (例: `salmon-run-scenario-hub`) | Cloud Quotas サンプルで必須 (または `--quota-project`) |
+| `GCP_SERVICE` | 対象サービス名 (例: `youtube.googleapis.com`) | Cloud Quotas サンプルで任意 (または `--service`) |
 
-Cloud Quotas API は環境変数ではなく `gcloud auth application-default login` で認証します。
+CLI 引数を指定した場合は環境変数より優先されます。
+Cloud Quotas API の認証自体は `gcloud auth application-default login` (ADC) で行います。
 
 `.env.example` をコピーして `.env` を作成し、値を設定してください:
 
@@ -94,11 +98,22 @@ python examples/youtube_search_sample.py --q "Minecraft" --max-results 3
 
 YouTube Data API のクォータ情報を取得するには、`--service` に **`youtube.googleapis.com`** を指定します。
 
+環境変数を設定済みであれば、引数を省略できます:
+
+```bash
+# .env を読み込む場合
+export $(grep -v '^#' examples/.env | xargs)
+```
+
 #### 方法 A: Discovery mode（まず何のクォータがあるか調べる）
 
 quota 名が分からない場合は、まず discovery mode で一覧から探します:
 
 ```bash
+# 環境変数を設定済みの場合
+python examples/cloud_quotas_get_sample.py --discover
+
+# または引数で直接指定
 python examples/cloud_quotas_get_sample.py \
   --project-number 123456789012 \
   --service youtube.googleapis.com \
@@ -112,8 +127,7 @@ Discovery mode で `name` が判明したら、次回以降は直接指定でき
 
 ```bash
 python examples/cloud_quotas_get_sample.py \
-  --name projects/123456789012/locations/global/services/youtube.googleapis.com/quotaInfos/YOUR_QUOTA_ID \
-  --quota-project YOUR_PROJECT_ID
+  --name projects/123456789012/locations/global/services/youtube.googleapis.com/quotaInfos/YOUR_QUOTA_ID
 ```
 
 ---
