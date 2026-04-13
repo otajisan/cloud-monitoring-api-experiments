@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""YouTube Data API daily quota usage report.
+"""YouTube Data API quota usage report.
 
 Combines Cloud Monitoring API (usage) and Cloud Quotas API (limit)
-to show the current daily quota consumption for YouTube Data API.
+to show quota consumption for YouTube Data API.
+
+Covers both allocation quotas (per day) and rate quotas (per minute).
 
 Requires:
   - google-auth, requests
@@ -26,6 +28,25 @@ MONITORING_BASE = "https://monitoring.googleapis.com/v3"
 QUOTAS_BASE = "https://cloudquotas.googleapis.com/v1"
 SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 
+# Metrics to query, grouped by quota type
+QUOTA_TYPES = {
+    "allocation": {
+        "label": "Allocation (per day)",
+        "usage": "serviceruntime.googleapis.com/quota/allocation/usage",
+        "limit_candidates": [
+            "serviceruntime.googleapis.com/quota/limit",
+            "serviceruntime.googleapis.com/quota/allocation/limit",
+        ],
+    },
+    "rate": {
+        "label": "Rate (per minute)",
+        "usage": "serviceruntime.googleapis.com/quota/rate/net_usage",
+        "limit_candidates": [
+            "serviceruntime.googleapis.com/quota/rate/limit",
+        ],
+    },
+}
+
 
 def get_session(quota_project=None):
     """Build an authenticated session using ADC."""
@@ -43,10 +64,7 @@ def get_session(quota_project=None):
 
 
 def fetch_monitoring_metric(session, project, metric_type, service, interval_start, interval_end, fatal=True):
-    """Query Cloud Monitoring API for a quota metric.
-
-    If fatal=False, returns None on error instead of exiting.
-    """
+    """Query Cloud Monitoring API for a quota metric."""
     url = f"{MONITORING_BASE}/projects/{project}/timeSeries"
     params = {
         "filter": (
@@ -74,7 +92,7 @@ def fetch_monitoring_metric(session, project, metric_type, service, interval_sta
 
 
 def fetch_quota_limit(session, project_number, service):
-    """Get quota limit from Cloud Quotas API (list first item)."""
+    """Get all QuotaInfo from Cloud Quotas API."""
     parent = f"projects/{project_number}/locations/global/services/{service}"
     url = f"{QUOTAS_BASE}/{parent}/quotaInfos"
     resp = session.get(url)
@@ -84,7 +102,7 @@ def fetch_quota_limit(session, project_number, service):
     return data.get("quotaInfos", [])
 
 
-def extract_latest_value(time_series_response):
+def extract_latest_values(time_series_response):
     """Extract metric values from Monitoring API response.
 
     Returns a dict of {quota_metric_label: latest_int_value}.
@@ -99,9 +117,52 @@ def extract_latest_value(time_series_response):
     return results
 
 
+def fetch_usage_and_limit(session, project, service, interval_start, interval_end, quota_type_config):
+    """Fetch usage and limit for a given quota type."""
+    # Usage
+    usage_resp = fetch_monitoring_metric(
+        session, project,
+        quota_type_config["usage"],
+        service, interval_start, interval_end,
+        fatal=False,
+    )
+    usage_map = extract_latest_values(usage_resp) if usage_resp else {}
+
+    # Limit (try candidates)
+    limit_map = {}
+    for limit_metric in quota_type_config["limit_candidates"]:
+        limit_resp = fetch_monitoring_metric(
+            session, project,
+            limit_metric,
+            service, interval_start, interval_end,
+            fatal=False,
+        )
+        if limit_resp:
+            limit_map = extract_latest_values(limit_resp)
+            if limit_map:
+                break
+
+    return usage_map, limit_map
+
+
+def build_quotas_limit_map(quotas_info):
+    """Build a metric -> limit map from Cloud Quotas API response."""
+    result = {}
+    if not quotas_info:
+        return result
+    for qi in quotas_info:
+        metric = qi.get("metric", "")
+        dims = qi.get("dimensionsInfos", [])
+        if dims:
+            val = dims[0].get("details", {}).get("value")
+            if val is not None:
+                result[metric] = int(val)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="YouTube Data API daily quota usage report",
+        description="YouTube Data API quota usage report (daily + per-minute)",
     )
     parser.add_argument(
         "--project-number",
@@ -143,46 +204,40 @@ def main():
     interval_end = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     interval_start = start.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # 1. Fetch usage from Cloud Monitoring
-    usage_resp = fetch_monitoring_metric(
-        session, args.project_number,
-        "serviceruntime.googleapis.com/quota/allocation/usage",
-        args.service, interval_start, interval_end,
-    )
-    usage_map = extract_latest_value(usage_resp)
+    # Fallback limits from Cloud Quotas API
+    quotas_info = fetch_quota_limit(session, args.project_number, args.service)
+    quotas_limit_map = build_quotas_limit_map(quotas_info)
 
-    # 2. Fetch limit from Cloud Monitoring (try two metric names)
-    limit_map = {}
-    for limit_metric in [
-        "serviceruntime.googleapis.com/quota/limit",
-        "serviceruntime.googleapis.com/quota/allocation/limit",
-    ]:
-        limit_resp = fetch_monitoring_metric(
-            session, args.project_number,
-            limit_metric,
-            args.service, interval_start, interval_end,
-            fatal=False,
+    # Fetch metrics for each quota type
+    all_sections = []
+    for qtype, config in QUOTA_TYPES.items():
+        usage_map, limit_map = fetch_usage_and_limit(
+            session, args.project_number, args.service,
+            interval_start, interval_end, config,
         )
-        if limit_resp:
-            limit_map = extract_latest_value(limit_resp)
-            if limit_map:
-                break
 
-    # 3. Fallback: get limits from Cloud Quotas API
-    quotas_info = fetch_quota_limit(session, args.project_number, args.service) or []
-    quotas_limit_map = {}
-    for qi in quotas_info:
-        metric = qi.get("metric", "")
-        dims = qi.get("dimensionsInfos", [])
-        if dims:
-            val = dims[0].get("details", {}).get("value")
-            if val is not None:
-                quotas_limit_map[metric] = int(val)
+        all_metrics = sorted(set(list(usage_map.keys()) + list(limit_map.keys())))
+        if not all_metrics:
+            continue
 
-    # 4. Build report
-    all_metrics = sorted(set(list(usage_map.keys()) + list(limit_map.keys())))
+        entries = []
+        for metric in all_metrics:
+            usage = usage_map.get(metric, 0)
+            limit = limit_map.get(metric) or quotas_limit_map.get(metric)
+            entries.append({
+                "metric": metric,
+                "usage": usage,
+                "limit": limit,
+                "usage_rate": round(usage / limit * 100, 2) if limit else None,
+            })
 
-    if not all_metrics:
+        all_sections.append({
+            "type": qtype,
+            "label": config["label"],
+            "entries": entries,
+        })
+
+    if not all_sections:
         print(
             f"No quota usage data found for service '{args.service}' "
             f"in project '{args.project_number}'.",
@@ -195,37 +250,28 @@ def main():
         )
         sys.exit(1)
 
-    report = []
-    for metric in all_metrics:
-        usage = usage_map.get(metric, 0)
-        limit = limit_map.get(metric) or quotas_limit_map.get(metric)
-        entry = {
-            "metric": metric,
-            "usage": usage,
-            "limit": limit,
-            "usage_rate": round(usage / limit * 100, 2) if limit else None,
-        }
-        report.append(entry)
-
     if args.json:
-        print(json.dumps(report, indent=2, ensure_ascii=False))
+        print(json.dumps(all_sections, indent=2, ensure_ascii=False))
         return
 
     # Formatted output
     display_name = args.service.replace(".googleapis.com", "").replace(".", " ").title()
-    print(f"\n{display_name} - Quota Usage (daily, last 24h)\n")
-    print(f"{'Metric':<50} {'Usage':>10} {'Limit':>10} {'Rate':>8}")
-    print("-" * 82)
-    for entry in report:
-        name = entry["metric"].split("/")[-1] if "/" in entry["metric"] else entry["metric"]
-        usage_str = str(entry["usage"])
-        limit_str = str(entry["limit"]) if entry["limit"] is not None else "N/A"
-        if entry["usage_rate"] is not None:
-            rate_str = f"{entry['usage_rate']}%"
-        else:
-            rate_str = "N/A"
-        print(f"{name:<50} {usage_str:>10} {limit_str:>10} {rate_str:>8}")
-    print()
+    print(f"\n{display_name} - Quota Usage\n")
+
+    for section in all_sections:
+        print(f"[ {section['label']} ]")
+        print(f"{'Metric':<50} {'Usage':>10} {'Limit':>10} {'Rate':>8}")
+        print("-" * 82)
+        for entry in section["entries"]:
+            name = entry["metric"].split("/")[-1] if "/" in entry["metric"] else entry["metric"]
+            usage_str = str(entry["usage"])
+            limit_str = str(entry["limit"]) if entry["limit"] is not None else "N/A"
+            if entry["usage_rate"] is not None:
+                rate_str = f"{entry['usage_rate']}%"
+            else:
+                rate_str = "N/A"
+            print(f"{name:<50} {usage_str:>10} {limit_str:>10} {rate_str:>8}")
+        print()
 
 
 if __name__ == "__main__":
