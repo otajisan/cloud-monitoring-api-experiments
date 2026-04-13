@@ -5,7 +5,8 @@ YouTube Data API を使い、そのクォータ使用状況を Cloud Quotas API 
 | スクリプト | 目的 |
 |---|---|
 | `youtube_search_sample.py` | YouTube Data API v3 でキーワード検索 (クォータを消費する) |
-| `cloud_quotas_get_sample.py` | Cloud Quotas API で YouTube Data API のクォータ情報を取得 (ADC 認証) |
+| `cloud_quotas_get_sample.py` | Cloud Quotas API で YouTube Data API のクォータ上限情報を取得 (ADC 認証) |
+| `youtube_quota_usage.py` | YouTube Data API の日次クォータ使用率を表示 (Monitoring + Quotas API) |
 
 > **Note**: Cloud Quotas API は API Key 認証をサポートしていません (OAuth2 必須)。
 > そのため ADC (Application Default Credentials) を使用します。
@@ -14,8 +15,9 @@ YouTube Data API を使い、そのクォータ使用状況を Cloud Quotas API 
 ## 全体の流れ
 
 ```
-1. YouTube Data API で検索を実行 → クォータが消費される
-2. Cloud Quotas API で QuotaInfo を取得 → YouTube Data API のクォータ状況を JSON で確認
+1. YouTube Data API で検索を実行        → クォータが消費される
+2. Cloud Quotas API で QuotaInfo を取得  → クォータ上限設定を JSON で確認
+3. youtube_quota_usage.py を実行         → 使用量・上限・使用率をまとめて表示
 ```
 
 ---
@@ -38,15 +40,18 @@ YouTube Data API を使い、そのクォータ使用状況を Cloud Quotas API 
 1. [YouTube Data API v3](https://console.cloud.google.com/apis/library/youtube.googleapis.com) を有効化
 2. [API キーを作成](https://console.cloud.google.com/apis/credentials)
 
-### Cloud Quotas API
+### Cloud Quotas API / Cloud Monitoring API
 
 1. [Cloud Quotas API](https://console.cloud.google.com/apis/library/cloudquotas.googleapis.com) を有効化
-2. ADC をセットアップ:
+2. [Cloud Monitoring API](https://console.cloud.google.com/apis/library/monitoring.googleapis.com) を有効化 (`youtube_quota_usage.py` で使用)
+3. ADC をセットアップ:
    ```bash
    gcloud auth application-default login
    ```
-3. 実行ユーザーに `cloudquotas.quotas.get` 権限（または `roles/cloudquotas.viewer` ロール）が必要
-4. ADC でエンドユーザー認証を使う場合、**クォータプロジェクト** の指定が必要です。
+4. 実行ユーザーに以下の権限が必要:
+   - `cloudquotas.quotas.get`（または `roles/cloudquotas.viewer`）
+   - `monitoring.timeSeries.list`（または `roles/monitoring.viewer`）
+5. ADC でエンドユーザー認証を使う場合、**クォータプロジェクト** の指定が必要です。
    スクリプト実行時に `--quota-project YOUR_PROJECT_ID` を付けてください
 
 ## 依存ライブラリ
@@ -57,6 +62,7 @@ pip install google-auth requests
 
 - `youtube_search_sample.py` — 標準ライブラリのみ（外部依存なし）
 - `cloud_quotas_get_sample.py` — `google-auth` と `requests` が必要
+- `youtube_quota_usage.py` — `google-auth` と `requests` が必要
 
 ## 環境変数
 
@@ -128,6 +134,50 @@ Discovery mode で `name` が判明したら、次回以降は直接指定でき
 ```bash
 python examples/cloud_quotas_get_sample.py \
   --name projects/123456789012/locations/global/services/youtube.googleapis.com/quotaInfos/YOUR_QUOTA_ID
+```
+
+> **Note**: Cloud Quotas API が返すのはクォータの **上限設定** です。
+> 現在の **使用量** を確認するには Step 3 を参照してください。
+
+### Step 3: 日次クォータの使用率を確認する
+
+Cloud Monitoring API から使用量を、Cloud Quotas API から上限を取得し、使用率を表示します:
+
+```bash
+# 環境変数を設定済みの場合
+python examples/youtube_quota_usage.py
+
+# または引数で直接指定
+python examples/youtube_quota_usage.py \
+  --project-number 123456789012 \
+  --quota-project YOUR_PROJECT_ID
+```
+
+テーブル形式で出力されます:
+
+```
+Youtube - Quota Usage (daily, last 24h)
+
+Metric                                                  Usage      Limit     Rate
+----------------------------------------------------------------------------------
+default                                                   200     10000     2.0%
+```
+
+`--json` オプションで JSON 出力も可能です:
+
+```bash
+python examples/youtube_quota_usage.py --json
+```
+
+```json
+[
+  {
+    "metric": "youtube.googleapis.com/default",
+    "usage": 200,
+    "limit": 10000,
+    "usage_rate": 2.0
+  }
+]
 ```
 
 ---
