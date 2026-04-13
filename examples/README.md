@@ -9,6 +9,7 @@ YouTube Data API を使い、そのクォータ使用状況を Cloud Quotas API 
 
 > **Note**: Cloud Quotas API は API Key 認証をサポートしていません (OAuth2 必須)。
 > そのため ADC (Application Default Credentials) を使用します。
+> 詳細は末尾の「[検証: API Key 認証について](#検証-api-key-認証について)」を参照してください。
 
 ## 全体の流れ
 
@@ -262,3 +263,41 @@ Hint: Check that the service name is correct (e.g. youtube.googleapis.com) and t
 - プロジェクト番号（project ID ではなく数字のみの番号）が正しいか確認
 - Cloud Quotas API が有効化されているか確認
 - YouTube Data API v3 がそのプロジェクトで有効化されているか確認（有効化されていないサービスにはクォータ情報がない場合があります）
+
+---
+
+## 検証: API Key 認証について
+
+Cloud Quotas API に対して API Key のみで認証できるか検証しましたが、**利用不可** でした。
+
+### 検証内容
+
+API Key を使って Cloud Quotas API の `quotaInfos.list` エンドポイントを呼び出したところ、以下の `401 UNAUTHENTICATED` エラーが返されました:
+
+```
+Error: HTTP 401 Unauthorized
+{
+  "error": {
+    "code": 401,
+    "message": "API keys are not supported by this API. Expected OAuth2 access token or other authentication credentials that assert a principal. See https://cloud.google.com/docs/authentication",
+    "status": "UNAUTHENTICATED",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": "CREDENTIALS_MISSING",
+        "domain": "googleapis.com",
+        "metadata": {
+          "method": "google.api.cloudquotas.v1.CloudQuotas.ListQuotaInfos",
+          "service": "cloudquotas.googleapis.com"
+        }
+      }
+    ]
+  }
+}
+```
+
+### 結論
+
+- Cloud Quotas API は **API Key 認証を明示的に拒否** しており、OAuth2 アクセストークン等の principal を持つ認証情報が必須
+- そのため本リポジトリでは **ADC (Application Default Credentials)** を使用する方式のみ提供している
+- YouTube Data API のように API Key だけで利用できる API とは認証要件が異なる点に注意
