@@ -1,18 +1,36 @@
 # Examples
 
-3 本の独立したサンプルスクリプトです。
+YouTube Data API を使い、そのクォータ使用状況を Cloud Quotas API で確認するためのサンプルスクリプト集です。
 
-1. **YouTube Data API v3** - キーワード検索サンプル
-2. **Cloud Quotas API (ADC 認証)** - QuotaInfo GET サンプル
-3. **Cloud Quotas API (API Key 認証)** - QuotaInfo GET サンプル (標準ライブラリのみ)
+| スクリプト | 目的 |
+|---|---|
+| `youtube_search_sample.py` | YouTube Data API v3 でキーワード検索 (クォータを消費する) |
+| `cloud_quotas_get_sample.py` | Cloud Quotas API で YouTube Data API のクォータ情報を取得 (ADC 認証) |
+| `cloud_quotas_get_sample_apikey.py` | 同上 (API Key 認証 / 標準ライブラリのみ) |
+
+## 全体の流れ
+
+```
+1. YouTube Data API で検索を実行 → クォータが消費される
+2. Cloud Quotas API で QuotaInfo を取得 → YouTube Data API のクォータ状況を JSON で確認
+```
+
+---
 
 ## 事前準備
 
-### YouTube Data API
+### 共通
 
 1. [Google Cloud Console](https://console.cloud.google.com/) でプロジェクトを作成または選択
-2. [YouTube Data API v3](https://console.cloud.google.com/apis/library/youtube.googleapis.com) を有効化
-3. [API キーを作成](https://console.cloud.google.com/apis/credentials)
+2. プロジェクト番号を控えておく:
+   ```bash
+   gcloud projects describe YOUR_PROJECT_ID --format='value(projectNumber)'
+   ```
+
+### YouTube Data API
+
+1. [YouTube Data API v3](https://console.cloud.google.com/apis/library/youtube.googleapis.com) を有効化
+2. [API キーを作成](https://console.cloud.google.com/apis/credentials)
 
 ### Cloud Quotas API
 
@@ -34,9 +52,9 @@
 pip install google-auth requests
 ```
 
-- `youtube_search_sample.py` は標準ライブラリのみで動作します（外部依存なし）
-- `cloud_quotas_get_sample.py` は `google-auth` と `requests` が必要です
-- `cloud_quotas_get_sample_apikey.py` は標準ライブラリのみで動作します（外部依存なし）
+- `youtube_search_sample.py` — 標準ライブラリのみ（外部依存なし）
+- `cloud_quotas_get_sample.py` — `google-auth` と `requests` が必要
+- `cloud_quotas_get_sample_apikey.py` — 標準ライブラリのみ（外部依存なし）
 
 ## 環境変数
 
@@ -53,59 +71,69 @@ Cloud Quotas API の ADC 版は環境変数ではなく `gcloud auth application
 cp examples/.env.example examples/.env
 ```
 
-## 実行例
+---
 
-### YouTube Data API 検索サンプル
+## YouTube Data API のクォータ使用状況を確認する手順
+
+### Step 1: YouTube Data API で検索を実行する
 
 ```bash
-# デフォルト (ポケモン で検索)
 YOUTUBE_API_KEY=your-key python examples/youtube_search_sample.py
+```
 
-# キーワードと件数を指定
+これで YouTube Data API のクォータが消費されます（search.list は 1 回あたり 100 units）。
+
+オプションでキーワードや件数を変更できます:
+
+```bash
 python examples/youtube_search_sample.py --q "Minecraft" --max-results 3
 ```
 
-### Cloud Quotas API GET サンプル (ADC 認証)
+### Step 2: Cloud Quotas API でクォータ情報を確認する
 
-#### Discovery mode (推奨: quota 名が分からない場合)
+YouTube Data API のクォータ情報を取得するには、`--service` に **`youtube.googleapis.com`** を指定します。
 
+#### 方法 A: Discovery mode（まず何のクォータがあるか調べる）
+
+quota 名が分からない場合は、まず discovery mode で一覧から探します:
+
+**ADC 版:**
 ```bash
 python examples/cloud_quotas_get_sample.py \
-  --project-number 123456789012 \
-  --service compute.googleapis.com \
+  --project-number YOUR_PROJECT_NUMBER \
+  --service youtube.googleapis.com \
   --discover
 ```
 
-#### Direct mode (quota 名が分かっている場合)
-
-```bash
-python examples/cloud_quotas_get_sample.py \
-  --name projects/123456789012/locations/global/services/compute.googleapis.com/quotaInfos/CpusPerProjectPerRegion
-```
-
-### Cloud Quotas API GET サンプル (API Key 認証)
-
-外部依存なし・標準ライブラリのみで動作します。
-
-#### Discovery mode
-
+**API Key 版:**
 ```bash
 CLOUD_QUOTAS_API_KEY=your-key python examples/cloud_quotas_get_sample_apikey.py \
-  --project-number 123456789012 \
-  --service compute.googleapis.com \
+  --project-number YOUR_PROJECT_NUMBER \
+  --service youtube.googleapis.com \
   --discover
 ```
 
-#### Direct mode
+#### 方法 B: Direct mode（クォータ名を直接指定する）
 
+Discovery mode で `name` が判明したら、次回以降は直接指定できます:
+
+**ADC 版:**
+```bash
+python examples/cloud_quotas_get_sample.py \
+  --name projects/YOUR_PROJECT_NUMBER/locations/global/services/youtube.googleapis.com/quotaInfos/YOUR_QUOTA_ID
+```
+
+**API Key 版:**
 ```bash
 CLOUD_QUOTAS_API_KEY=your-key python examples/cloud_quotas_get_sample_apikey.py \
-  --name projects/123456789012/locations/global/services/compute.googleapis.com/quotaInfos/CpusPerProjectPerRegion
+  --name projects/YOUR_PROJECT_NUMBER/locations/global/services/youtube.googleapis.com/quotaInfos/YOUR_QUOTA_ID
 ```
+
+---
 
 ## 成功時の出力例
 
-### YouTube Data API
+### YouTube Data API 検索
 
 ```json
 {
@@ -136,30 +164,31 @@ CLOUD_QUOTAS_API_KEY=your-key python examples/cloud_quotas_get_sample_apikey.py 
 }
 ```
 
-### Cloud Quotas API
+### Cloud Quotas API (YouTube Data API のクォータ情報)
 
 ```json
 {
-  "name": "projects/123456789012/locations/global/services/compute.googleapis.com/quotaInfos/CpusPerProjectPerRegion",
-  "quotaId": "CpusPerProjectPerRegion",
-  "metric": "compute.googleapis.com/cpus",
-  "service": "compute.googleapis.com",
+  "name": "projects/123456789012/locations/global/services/youtube.googleapis.com/quotaInfos/QueryPerDayPerProject",
+  "quotaId": "QueryPerDayPerProject",
+  "metric": "youtube.googleapis.com/quota",
+  "service": "youtube.googleapis.com",
   "isPrecise": true,
   "containerType": "PROJECT",
-  "dimensions": ["region"],
-  "quotaDisplayName": "CPUs",
+  "quotaDisplayName": "Queries per day",
   "dimensionsInfos": [
     {
-      "dimensions": {
-        "region": "us-central1"
-      },
       "details": {
-        "value": 24
+        "value": 10000
       }
     }
   ]
 }
 ```
+
+> **Note**: 実際のレスポンス構造は API バージョンやクォータの種類によって異なる場合があります。
+> 上記はダミー例です。取得した raw JSON をそのまま確認してください。
+
+---
 
 ## 失敗時の典型例
 
@@ -176,7 +205,7 @@ Error: HTTP 403
 }
 ```
 
-**対処**: Google Cloud Console で対象 API を有効化してください。
+**対処**: Google Cloud Console で対象 API (YouTube Data API v3 / Cloud Quotas API) を有効化してください。
 
 ### 認証不足 (ADC 版)
 
@@ -214,19 +243,22 @@ Error: HTTP 404
 gcloud projects describe YOUR_PROJECT_ID --format='value(projectNumber)'
 ```
 
-### service 名や quota 名の指定が不正
+### service 名の指定が不正
 
 ```
 Error: HTTP 400
 ```
 
-**対処**: service 名は `compute.googleapis.com` のような完全な形式で指定してください。
+**対処**: YouTube Data API のクォータを確認する場合、service 名は **`youtube.googleapis.com`** です。
 
 ### Discovery mode で quota が見つからない
 
 ```
-Error: No quotaInfos found for service 'invalid.googleapis.com' in project '123456789012'.
+Error: No quotaInfos found for service 'youtube.googleapis.com' in project '123456789012'.
 Hint: Check that the service name is correct (e.g. compute.googleapis.com) and that the project number (not project ID) is valid.
 ```
 
-**対処**: service 名が正しいか、Cloud Quotas API が有効化されているか確認してください。
+**対処**:
+- プロジェクト番号（project ID ではなく数字のみの番号）が正しいか確認
+- Cloud Quotas API が有効化されているか確認
+- YouTube Data API v3 がそのプロジェクトで有効化されているか確認（有効化されていないサービスにはクォータ情報がない場合があります）
