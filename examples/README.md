@@ -1,9 +1,10 @@
 # Examples
 
-2 本の独立したサンプルスクリプトです。
+3 本の独立したサンプルスクリプトです。
 
 1. **YouTube Data API v3** - キーワード検索サンプル
-2. **Cloud Quotas API** - QuotaInfo GET サンプル
+2. **Cloud Quotas API (ADC 認証)** - QuotaInfo GET サンプル
+3. **Cloud Quotas API (API Key 認証)** - QuotaInfo GET サンプル (標準ライブラリのみ)
 
 ## 事前準備
 
@@ -16,11 +17,16 @@
 ### Cloud Quotas API
 
 1. [Cloud Quotas API](https://console.cloud.google.com/apis/library/cloudquotas.googleapis.com) を有効化
-2. ADC (Application Default Credentials) をセットアップ:
+2. 認証方式を選択:
+
+   **ADC 版** (`cloud_quotas_get_sample.py`) を使う場合:
    ```bash
    gcloud auth application-default login
    ```
-3. 実行ユーザーに `cloudquotas.quotas.get` 権限（または `roles/cloudquotas.viewer` ロール）が付与されていること
+   実行ユーザーに `cloudquotas.quotas.get` 権限（または `roles/cloudquotas.viewer` ロール）が必要
+
+   **API Key 版** (`cloud_quotas_get_sample_apikey.py`) を使う場合:
+   [API キーを作成](https://console.cloud.google.com/apis/credentials) し、Cloud Quotas API へのアクセスを許可
 
 ## 依存ライブラリ
 
@@ -30,14 +36,16 @@ pip install google-auth requests
 
 - `youtube_search_sample.py` は標準ライブラリのみで動作します（外部依存なし）
 - `cloud_quotas_get_sample.py` は `google-auth` と `requests` が必要です
+- `cloud_quotas_get_sample_apikey.py` は標準ライブラリのみで動作します（外部依存なし）
 
 ## 環境変数
 
 | 変数名 | 用途 | 必須 |
 |---|---|---|
 | `YOUTUBE_API_KEY` | YouTube Data API の API キー | YouTube サンプルで必須 |
+| `CLOUD_QUOTAS_API_KEY` | Cloud Quotas API の API キー | API Key 版で必須 |
 
-Cloud Quotas API 側は ADC を使うため、環境変数ではなく `gcloud auth application-default login` で認証します。
+Cloud Quotas API の ADC 版は環境変数ではなく `gcloud auth application-default login` で認証します。
 
 `.env.example` をコピーして `.env` を作成し、値を設定してください:
 
@@ -57,7 +65,7 @@ YOUTUBE_API_KEY=your-key python examples/youtube_search_sample.py
 python examples/youtube_search_sample.py --q "Minecraft" --max-results 3
 ```
 
-### Cloud Quotas API GET サンプル
+### Cloud Quotas API GET サンプル (ADC 認証)
 
 #### Discovery mode (推奨: quota 名が分からない場合)
 
@@ -72,6 +80,26 @@ python examples/cloud_quotas_get_sample.py \
 
 ```bash
 python examples/cloud_quotas_get_sample.py \
+  --name projects/123456789012/locations/global/services/compute.googleapis.com/quotaInfos/CpusPerProjectPerRegion
+```
+
+### Cloud Quotas API GET サンプル (API Key 認証)
+
+外部依存なし・標準ライブラリのみで動作します。
+
+#### Discovery mode
+
+```bash
+CLOUD_QUOTAS_API_KEY=your-key python examples/cloud_quotas_get_sample_apikey.py \
+  --project-number 123456789012 \
+  --service compute.googleapis.com \
+  --discover
+```
+
+#### Direct mode
+
+```bash
+CLOUD_QUOTAS_API_KEY=your-key python examples/cloud_quotas_get_sample_apikey.py \
   --name projects/123456789012/locations/global/services/compute.googleapis.com/quotaInfos/CpusPerProjectPerRegion
 ```
 
@@ -150,7 +178,7 @@ Error: HTTP 403
 
 **対処**: Google Cloud Console で対象 API を有効化してください。
 
-### 認証不足
+### 認証不足 (ADC 版)
 
 ```
 Error: Could not find default credentials.
@@ -158,6 +186,15 @@ Run: gcloud auth application-default login
 ```
 
 **対処**: `gcloud auth application-default login` を実行してください。
+
+### API キー未設定 (API Key 版)
+
+```
+Error: CLOUD_QUOTAS_API_KEY environment variable is not set.
+Create an API key at: https://console.cloud.google.com/apis/credentials
+```
+
+**対処**: 環境変数 `CLOUD_QUOTAS_API_KEY` に API キーを設定してください。
 
 ### project number と project id を取り違えている
 
