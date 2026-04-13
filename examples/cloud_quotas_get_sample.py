@@ -21,7 +21,7 @@ CLOUD_QUOTAS_BASE = "https://cloudquotas.googleapis.com/v1"
 SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 
 
-def get_authenticated_session():
+def get_authenticated_session(quota_project=None):
     """Build an authenticated requests.AuthorizedSession using ADC."""
     try:
         credentials, project = google.auth.default(scopes=SCOPES)
@@ -32,6 +32,9 @@ def get_authenticated_session():
             file=sys.stderr,
         )
         sys.exit(1)
+
+    if quota_project:
+        credentials = credentials.with_quota_project(quota_project)
 
     from google.auth.transport.requests import AuthorizedSession
 
@@ -77,33 +80,44 @@ def main():
     )
     parser.add_argument(
         "--project-number",
-        help="Google Cloud project number (for discovery mode)",
+        help="Google Cloud project number (numeric, e.g. 123456789012). NOT project ID.",
     )
     parser.add_argument(
         "--service",
-        help="Service name, e.g. compute.googleapis.com (for discovery mode)",
+        help="Service name, e.g. youtube.googleapis.com",
     )
     parser.add_argument(
         "--discover",
         action="store_true",
         help="Discovery mode: list quotaInfos and GET the first one",
     )
+    parser.add_argument(
+        "--quota-project",
+        help=(
+            "Project ID to use as the quota project for API billing. "
+            "Required when using ADC with end-user credentials. "
+            "Example: my-project-id"
+        ),
+    )
     args = parser.parse_args()
 
     # Validate arguments
     if args.name:
-        # Direct mode
         pass
     elif args.project_number and args.service:
-        # Discovery mode
-        pass
+        if not args.project_number.isdigit():
+            parser.error(
+                f"--project-number must be a numeric project number (e.g. 123456789012), "
+                f"not a project ID ('{args.project_number}'). "
+                f"Run: gcloud projects describe {args.project_number} --format='value(projectNumber)'"
+            )
     else:
         parser.error(
             "Either --name (direct mode) or "
             "--project-number and --service (discovery mode) are required."
         )
 
-    session = get_authenticated_session()
+    session = get_authenticated_session(quota_project=args.quota_project)
 
     if args.name:
         # Direct mode: GET the specified resource
@@ -121,7 +135,7 @@ def main():
             )
             print(
                 "Hint: Check that the service name is correct "
-                "(e.g. compute.googleapis.com) and that the project number "
+                "(e.g. youtube.googleapis.com) and that the project number "
                 "(not project ID) is valid.",
                 file=sys.stderr,
             )
