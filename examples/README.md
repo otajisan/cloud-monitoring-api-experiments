@@ -6,7 +6,9 @@ YouTube Data API を使い、そのクォータ使用状況を Cloud Quotas API 
 |---|---|
 | `youtube_search_sample.py` | YouTube Data API v3 でキーワード検索 (クォータを消費する) |
 | `cloud_quotas_get_sample.py` | Cloud Quotas API で YouTube Data API のクォータ情報を取得 (ADC 認証) |
-| `cloud_quotas_get_sample_apikey.py` | 同上 (API Key 認証 / 標準ライブラリのみ) |
+
+> **Note**: Cloud Quotas API は API Key 認証をサポートしていません (OAuth2 必須)。
+> そのため ADC (Application Default Credentials) を使用します。
 
 ## 全体の流れ
 
@@ -38,18 +40,13 @@ YouTube Data API を使い、そのクォータ使用状況を Cloud Quotas API 
 ### Cloud Quotas API
 
 1. [Cloud Quotas API](https://console.cloud.google.com/apis/library/cloudquotas.googleapis.com) を有効化
-2. 認証方式を選択:
-
-   **ADC 版** (`cloud_quotas_get_sample.py`) を使う場合:
+2. ADC をセットアップ:
    ```bash
    gcloud auth application-default login
    ```
-   - 実行ユーザーに `cloudquotas.quotas.get` 権限（または `roles/cloudquotas.viewer` ロール）が必要
-   - ADC でエンドユーザー認証を使う場合、**クォータプロジェクト** の指定が必要です。
-     スクリプト実行時に `--quota-project YOUR_PROJECT_ID` を付けてください
-
-   **API Key 版** (`cloud_quotas_get_sample_apikey.py`) を使う場合:
-   [API キーを作成](https://console.cloud.google.com/apis/credentials) し、Cloud Quotas API へのアクセスを許可
+3. 実行ユーザーに `cloudquotas.quotas.get` 権限（または `roles/cloudquotas.viewer` ロール）が必要
+4. ADC でエンドユーザー認証を使う場合、**クォータプロジェクト** の指定が必要です。
+   スクリプト実行時に `--quota-project YOUR_PROJECT_ID` を付けてください
 
 ## 依存ライブラリ
 
@@ -59,16 +56,14 @@ pip install google-auth requests
 
 - `youtube_search_sample.py` — 標準ライブラリのみ（外部依存なし）
 - `cloud_quotas_get_sample.py` — `google-auth` と `requests` が必要
-- `cloud_quotas_get_sample_apikey.py` — 標準ライブラリのみ（外部依存なし）
 
 ## 環境変数
 
 | 変数名 | 用途 | 必須 |
 |---|---|---|
 | `YOUTUBE_API_KEY` | YouTube Data API の API キー | YouTube サンプルで必須 |
-| `CLOUD_QUOTAS_API_KEY` | Cloud Quotas API の API キー | API Key 版で必須 |
 
-Cloud Quotas API の ADC 版は環境変数ではなく `gcloud auth application-default login` で認証します。
+Cloud Quotas API は環境変数ではなく `gcloud auth application-default login` で認証します。
 
 `.env.example` をコピーして `.env` を作成し、値を設定してください:
 
@@ -102,20 +97,11 @@ YouTube Data API のクォータ情報を取得するには、`--service` に **
 
 quota 名が分からない場合は、まず discovery mode で一覧から探します:
 
-**ADC 版:**
 ```bash
 python examples/cloud_quotas_get_sample.py \
   --project-number 123456789012 \
   --service youtube.googleapis.com \
-  --quota-project salmon-run-scenario-hub \
-  --discover
-```
-
-**API Key 版:**
-```bash
-CLOUD_QUOTAS_API_KEY=your-key python examples/cloud_quotas_get_sample_apikey.py \
-  --project-number 123456789012 \
-  --service youtube.googleapis.com \
+  --quota-project YOUR_PROJECT_ID \
   --discover
 ```
 
@@ -123,17 +109,10 @@ CLOUD_QUOTAS_API_KEY=your-key python examples/cloud_quotas_get_sample_apikey.py 
 
 Discovery mode で `name` が判明したら、次回以降は直接指定できます:
 
-**ADC 版:**
 ```bash
 python examples/cloud_quotas_get_sample.py \
   --name projects/123456789012/locations/global/services/youtube.googleapis.com/quotaInfos/YOUR_QUOTA_ID \
-  --quota-project salmon-run-scenario-hub
-```
-
-**API Key 版:**
-```bash
-CLOUD_QUOTAS_API_KEY=your-key python examples/cloud_quotas_get_sample_apikey.py \
-  --name projects/123456789012/locations/global/services/youtube.googleapis.com/quotaInfos/YOUR_QUOTA_ID
+  --quota-project YOUR_PROJECT_ID
 ```
 
 ---
@@ -214,7 +193,7 @@ Error: HTTP 403
 
 **対処**: Google Cloud Console で対象 API (YouTube Data API v3 / Cloud Quotas API) を有効化してください。
 
-### クォータプロジェクト未指定 (ADC 版)
+### クォータプロジェクト未指定
 
 ```
 Error: HTTP 403
@@ -233,11 +212,11 @@ Error: HTTP 403
 python examples/cloud_quotas_get_sample.py \
   --project-number 123456789012 \
   --service youtube.googleapis.com \
-  --quota-project salmon-run-scenario-hub \
+  --quota-project YOUR_PROJECT_ID \
   --discover
 ```
 
-### 認証不足 (ADC 版)
+### 認証不足
 
 ```
 Error: Could not find default credentials.
@@ -245,15 +224,6 @@ Run: gcloud auth application-default login
 ```
 
 **対処**: `gcloud auth application-default login` を実行してください。
-
-### API キー未設定 (API Key 版)
-
-```
-Error: CLOUD_QUOTAS_API_KEY environment variable is not set.
-Create an API key at: https://console.cloud.google.com/apis/credentials
-```
-
-**対処**: 環境変数 `CLOUD_QUOTAS_API_KEY` に API キーを設定してください。
 
 ### project number と project ID を取り違えている
 
@@ -285,7 +255,7 @@ Error: HTTP 400
 
 ```
 Error: No quotaInfos found for service 'youtube.googleapis.com' in project '123456789012'.
-Hint: Check that the service name is correct (e.g. compute.googleapis.com) and that the project number (not project ID) is valid.
+Hint: Check that the service name is correct (e.g. youtube.googleapis.com) and that the project number (not project ID) is valid.
 ```
 
 **対処**:
